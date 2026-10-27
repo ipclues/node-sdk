@@ -1,4 +1,5 @@
 export { Client, APIError } from "./client.js";
+export { Database } from "./database.js";
 export type {
   AttrValue,
   APIResponse,
