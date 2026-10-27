@@ -1,3 +1,5 @@
+import { Database } from "./database.js";
+
 export type AttrValue = string | number | string[] | null;
 
 export class APIError extends Error {
@@ -35,21 +37,33 @@ export class Client {
     this.timeout = timeout;
   }
 
-  async lookup<T = APIResponse>(ip: string): Promise<T> {
+  async lookup<T = APIResponse>(
+    ip: string,
+    options: LookupOptions = {},
+  ): Promise<T> {
     if (!ip?.trim()) {
       throw new Error("IP address is required");
     }
 
-    const response = await fetch(
-      `${this.baseUrl}/lookup/ip/${encodeURIComponent(ip)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(this.timeout),
+    const url = new URL(`${this.baseUrl}/lookup/ip/${encodeURIComponent(ip)}`);
+
+    if (options.db !== undefined) {
+      const databases = Array.isArray(options.db) ? options.db : [options.db];
+
+      if (databases.length === 0) {
+        throw new Error("At least one database must be selected");
+      }
+
+      url.searchParams.set("db", databases.join(","));
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        Accept: "application/json",
       },
-    );
+      signal: AbortSignal.timeout(this.timeout),
+    });
 
     if (!response.ok) {
       throw new APIError(
@@ -66,4 +80,8 @@ export interface ClientOptions {
   apiKey: string;
   baseUrl?: string;
   timeout?: number;
+}
+
+export interface LookupOptions {
+  db?: Database | Database[];
 }
