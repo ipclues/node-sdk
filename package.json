@@ -1,0 +1,37 @@
+{
+  "name": "@ipclues/sdk",
+  "version": "0.1.0",
+  "description": "Official IPClues SDK for Node.js, TypeScript and JavaScript",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "prepublishOnly": "npm run build && npm run typecheck && npm run fmt:check"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2"
+  },
+  "author": {
+    "name": "Rufai Limantawa",
+    "email": "rufailimantawa@gmail.com"
+  }
+}
