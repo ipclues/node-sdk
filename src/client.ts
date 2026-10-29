@@ -1,18 +1,69 @@
 import { Database } from "./database.js";
+import {
+  APIResponse,
+  APIResponseData,
+  RateLimitMetadata,
+  ResponseMetadata,
+} from "./response.js";
 
-export type AttrValue = string | number | string[] | null;
-
-export class APIError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
-    super(message);
-    this.name = "APIError";
-  }
+export interface LookupOptions {
+  db?: Database | readonly Database[];
 }
 
-export type APIResponse = Record<string, AttrValue>;
+export interface ClientOptions {
+  apiKey: string;
+  baseUrl?: string;
+  timeout?: number;
+}
+
+function headerNumber(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseVersions(value: string | null): Record<string, string> | null {
+  if (!value) return null;
+
+  const versions: Record<string, string> = {};
+  for (const item of value.split(",")) {
+    const separator = item.indexOf("=");
+    if (separator > 0) {
+      versions[item.slice(0, separator).trim()] = item
+        .slice(separator + 1)
+        .trim();
+    }
+  }
+  return Object.keys(versions).length ? versions : null;
+}
+
+function parseRateLimit(
+  value: string | null,
+  policyValue: string | null,
+  retryValue: string | null,
+): RateLimitMetadata {
+  const match = value?.match(/^"?([^";]+)"?(.*)$/);
+  const parameters = match?.[2] ?? "";
+  const parameter = (name: string) =>
+    parameters.match(new RegExp(`(?:^|;)\\s*${name}=([0-9]+)`))?.[1];
+
+  const policyMatch = policyValue?.match(/^"?([^";]+)"?/);
+
+  return {
+    policy: match?.[1] ?? policyMatch?.[1] ?? null,
+    limit: headerNumber(policyValue?.match(/(?:^|;)\s*q=(\d+)/)?.[1] ?? null),
+    remaining: headerNumber(parameter("r") ?? null),
+    reset: headerNumber(parameter("t") ?? null),
+    retry_after: headerNumber(retryValue),
+  };
+}
+
+export class IPCluesError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "IPCluesError";
+  }
+}
 
 export class Client {
   private readonly apiKey: string;
@@ -37,25 +88,31 @@ export class Client {
     this.timeout = timeout;
   }
 
-  async lookup<T = APIResponse>(
+  async lookup<T = APIResponseData>(
     ip: string,
     options: LookupOptions = {},
-  ): Promise<T> {
+  ): Promise<APIResponse<T>> {
     if (!ip?.trim()) {
       throw new Error("IP address is required");
     }
 
-    const url = new URL(`${this.baseUrl}/lookup/ip/${encodeURIComponent(ip)}`);
+    const databases =
+      options.db === undefined
+        ? []
+        : Array.isArray(options.db)
+          ? options.db
+          : [options.db];
 
-    if (options.db !== undefined) {
-      const databases = Array.isArray(options.db) ? options.db : [options.db];
-
-      if (databases.length === 0) {
-        throw new Error("At least one database must be selected");
-      }
-
-      url.searchParams.set("db", databases.join(","));
+    if (options.db !== undefined && databases.length === 0) {
+      throw new Error("At least one database must be selected");
     }
+
+    const query = new URLSearchParams();
+    if (databases.length) query.set("db", databases.join(","));
+
+    const url =
+      `${this.baseUrl}/lookup/ip/${encodeURIComponent(ip)}` +
+      (query.size ? `?${query}` : "");
 
     const response = await fetch(url, {
       headers: {
@@ -65,23 +122,35 @@ export class Client {
       signal: AbortSignal.timeout(this.timeout),
     });
 
-    if (!response.ok) {
-      throw new APIError(
-        `IPClues API returned HTTP ${response.status}`,
-        response.status,
-      );
+    const text = await response.text();
+    let data: unknown = text;
+
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      // Preserve a non-JSON response as text.
     }
 
-    return response.json() as Promise<T>;
+    const headers = response.headers;
+    const metadata: ResponseMetadata = {
+      status: response.status,
+      reason: response.statusText,
+      request_id: headers.get("I3-Request-Id"),
+      credits_charged: headerNumber(headers.get("I3-Credits-Charged")),
+      credits_remaining: headerNumber(headers.get("I3-Credits-Remaining")),
+      databases:
+        headers
+          .get("I3-Databases")
+          ?.split(",")
+          .map((v) => v.trim()) ?? null,
+      database_versions: parseVersions(headers.get("I3-Database-Versions")),
+      rate_limit: parseRateLimit(
+        headers.get("Ratelimit"),
+        headers.get("Ratelimit-Policy"),
+        headers.get("Retry-After"),
+      ),
+    };
+
+    return { data: data as T, metadata };
   }
-}
-
-export interface ClientOptions {
-  apiKey: string;
-  baseUrl?: string;
-  timeout?: number;
-}
-
-export interface LookupOptions {
-  db?: Database | Database[];
 }

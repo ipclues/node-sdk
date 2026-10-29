@@ -1,8 +1,10 @@
-export { Client, APIError } from "./client.js";
+export { Client, IPCluesError } from "./client.js";
 export { Database } from "./database.js";
 export type {
-  AttrValue,
   APIResponse,
-  ClientOptions,
-  LookupOptions,
-} from "./client.js";
+  APIResponseData,
+  AttrValue,
+  RateLimitMetadata,
+  ResponseMetadata,
+} from "./response.js";
+export type { ClientOptions, LookupOptions } from "./client.js";
